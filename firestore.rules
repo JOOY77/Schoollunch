@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 사용자 인증 확인 함수
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // 자신의 평점인지 확인하는 함수
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // ratings 컬렉션 규칙
+    match /ratings/{ratingId} {
+      // 읽기: 모든 인증된 사용자
+      allow read: if isAuthenticated();
+      
+      // 쓰기: 인증된 사용자는 자신의 평점을 생성/수정 가능
+      allow create, update: if isAuthenticated() 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.rating > 0 
+        && request.resource.data.rating <= 5;
+      
+      // 삭제: 자신의 평점만 삭제 가능
+      allow delete: if isAuthenticated() 
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // averageRatings 컬렉션 규칙
+    match /averageRatings/{averageId} {
+      // 읽기: 모든 사용자가 평균 평점을 볼 수 있음
+      allow read: if true;
+      
+      // 쓰기: 인증된 사용자는 평균 평점을 수정할 수 있음
+      allow write: if isAuthenticated();
+    }
+  }
+} 
