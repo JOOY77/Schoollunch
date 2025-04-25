@@ -1,24 +1,78 @@
-import { X } from "lucide-react"
+import React, { useCallback, useMemo } from 'react';
+import { X, Star, Image, Heart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { StarRating } from "./star-rating"
+import { cn } from "@/lib/utils"
 
 interface PopupProps {
     food: string
-    position?: { top: number; left: number }
+    position?: { x: number; y: number }
     onClose: () => void
     onRate: (rating: number) => void
+    onToggleFavorite: () => void
     currentRating: number
     isAuthenticated: boolean
+    isFavorite: boolean
 }
 
-export function Popup({
+export const Popup = React.memo(({
     food,
+    position,
     onClose,
     onRate,
+    onToggleFavorite,
     currentRating,
     isAuthenticated,
-    position,
-}: PopupProps) {
+    isFavorite
+}: PopupProps) => {
+    // Google 검색 URL 메모이제이션
+    const googleSearchUrl = useMemo(() => {
+        const encodedFood = encodeURIComponent(`${food} 급식`);
+        return `https://www.google.com/search?q=${encodedFood}&tbm=isch`;
+    }, [food]);
+
+    // 별점 클릭 핸들러 메모이제이션
+    const handleStarClick = useCallback((rating: number) => {
+        onRate(rating);
+    }, [onRate]);
+
+    // 즐겨찾기 토글 핸들러 메모이제이션
+    const handleFavoriteToggle = useCallback(() => {
+        onToggleFavorite();
+    }, [onToggleFavorite]);
+
+    // 인증 상태에 따른 별점 섹션 메모이제이션
+    const ratingSection = useMemo(() => {
+        if (!isAuthenticated) {
+            return (
+                <div className="text-sm text-gray-500 mt-4">
+                    로그인하시면 별점을 남기실 수 있습니다.
+                </div>
+            );
+        }
+
+        return (
+            <div className="flex items-center mt-4">
+                <div className="text-sm mr-2">별점:</div>
+                <div className="flex">
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                        <Star
+                            key={rating}
+                            size={20}
+                            className={cn(
+                                "cursor-pointer transition-colors",
+                                rating <= currentRating
+                                    ? "fill-yellow-400 text-yellow-400"
+                                    : "text-gray-300"
+                            )}
+                            onClick={() => handleStarClick(rating)}
+                        />
+                    ))}
+                </div>
+            </div>
+        );
+    }, [isAuthenticated, currentRating, handleStarClick]);
+
     return (
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
@@ -38,34 +92,47 @@ export function Popup({
                     </button>
                 </div>
 
-                {isAuthenticated ? (
-                    <>
-                        <div className="mb-3 sm:mb-4 md:mb-6">
-                            <p className="text-xs sm:text-sm md:text-base text-gray-600 mb-2 sm:mb-3">이 메뉴는 어떠셨나요?</p>
-                            <StarRating
-                                initialRating={Number(currentRating)}
-                                onRatingChange={onRate}
-                                size={24}
-                            />
-                        </div>
-                        <p className="text-[10px] sm:text-xs md:text-sm text-gray-500">
-                            별점을 다시 클릭하면 평가가 취소됩니다.
-                        </p>
-                    </>
-                ) : (
-                    <div className="text-center">
-                        <p className="text-xs sm:text-sm md:text-base text-gray-600 mb-2 sm:mb-3 md:mb-4">
-                            급식을 평가하려면 로그인이 필요합니다.
-                        </p>
-                        <Button
-                            onClick={onClose}
-                            className="w-full sm:w-auto px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm md:text-base"
+                <div className="flex space-x-2 mt-2">
+                    <a
+                        href={googleSearchUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 hover:text-blue-700 text-sm flex items-center"
+                    >
+                        <Image size={16} className="mr-1" />
+                        이미지 검색
+                    </a>
+                    {isAuthenticated && (
+                        <button
+                            onClick={handleFavoriteToggle}
+                            className="text-sm flex items-center"
                         >
-                            확인
-                        </Button>
-                    </div>
-                )}
+                            <Heart
+                                size={16}
+                                className={cn(
+                                    "mr-1",
+                                    isFavorite ? "fill-red-500 text-red-500" : "text-gray-500"
+                                )}
+                            />
+                            {isFavorite ? "즐겨찾기 해제" : "즐겨찾기"}
+                        </button>
+                    )}
+                </div>
+
+                {ratingSection}
             </div>
         </div>
     );
-} 
+}, (prevProps, nextProps) => {
+    // 최적화된 비교 함수
+    return (
+        prevProps.food === nextProps.food &&
+        prevProps.currentRating === nextProps.currentRating &&
+        prevProps.isAuthenticated === nextProps.isAuthenticated &&
+        prevProps.isFavorite === nextProps.isFavorite &&
+        (!prevProps.position || !nextProps.position || (
+            prevProps.position.x === nextProps.position.x &&
+            prevProps.position.y === nextProps.position.y
+        ))
+    );
+}); 

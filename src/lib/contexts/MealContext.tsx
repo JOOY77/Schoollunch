@@ -235,53 +235,81 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [userRatings]
   );
 
-  // 즉시 로딩 데이터 가져오기
+  // 캐시 관리를 위한 유틸리티 함수들
+  const getCacheKey = (date: Date) => format(date, 'yyyy-MM');
+
+  const isValidCache = (cached: CacheData) => {
+    return cached && Date.now() < cached.expiresAt;
+  };
+
+  // 즉시 로딩 데이터 가져오기 (개선된 버전)
   const getImmediateData = useCallback(async (date: Date, direction?: 'prev' | 'next') => {
+    const monthKey = getCacheKey(date);
+    
+    // 1. 캐시 확인
+    if (cache.has(monthKey)) {
+      const cached = cache.get(monthKey)!;
+      if (isValidCache(cached)) {
+        setMealData(prev => ({ ...prev, ...cached.data }));
+        return cached.data;
+      }
+    }
+
+    // 2. 캐시 없거나 만료된 경우만 새로 로드
     let start = subDays(date, IMMEDIATE_RANGE);
     let end = addDays(date, IMMEDIATE_RANGE);
 
-    // 방향에 따른 추가 프리로드
     if (direction === 'prev') {
       start = subDays(start, PRELOAD_RANGE);
     } else if (direction === 'next') {
       end = addDays(end, PRELOAD_RANGE);
-    }
-
-    const data = await getMealData(start, end);
-    setMealData(prev => ({ ...prev, ...data }));
-    return data;
-  }, []);
-
-  // 백그라운드 데이터 프리페칭
-  const prefetchBackgroundData = useCallback(async (date: Date, direction?: 'prev' | 'next') => {
-    let start = subDays(date, BACKGROUND_RANGE);
-    let end = addDays(date, BACKGROUND_RANGE);
-
-    // 방향에 따른 추가 프리로드
-    if (direction === 'prev') {
-      start = subDays(start, PRELOAD_RANGE);
-    } else if (direction === 'next') {
-      end = addDays(end, PRELOAD_RANGE);
-    }
-
-    const monthKey = format(date, 'yyyy-MM');
-    
-    if (cache.has(monthKey)) {
-      const cached = cache.get(monthKey)!;
-      if (Date.now() < cached.expiresAt) {
-        setMealData(prev => ({ ...prev, ...cached.data }));
-        return;
-      }
     }
 
     try {
       const data = await getMealData(start, end);
+      
+      // 3. 새로운 데이터 캐시에 저장
       cache.set(monthKey, {
         data,
         timestamp: Date.now(),
         expiresAt: Date.now() + CACHE_DURATION
       });
+      
       setMealData(prev => ({ ...prev, ...data }));
+      return data;
+    } catch (error) {
+      console.error('Error fetching immediate data:', error);
+      return null;
+    }
+  }, [cache]);
+
+  // 백그라운드 데이터 프리페칭 (개선된 버전)
+  const prefetchBackgroundData = useCallback(async (date: Date, direction?: 'prev' | 'next') => {
+    const monthKey = getCacheKey(date);
+    
+    // 이미 유효한 캐시가 있으면 스킵
+    if (cache.has(monthKey) && isValidCache(cache.get(monthKey)!)) {
+      return;
+    }
+
+    let start = subDays(date, BACKGROUND_RANGE);
+    let end = addDays(date, BACKGROUND_RANGE);
+
+    if (direction === 'prev') {
+      start = subDays(start, PRELOAD_RANGE);
+    } else if (direction === 'next') {
+      end = addDays(end, PRELOAD_RANGE);
+    }
+
+    try {
+      const data = await getMealData(start, end);
+      
+      // 캐시 저장
+      cache.set(monthKey, {
+        data,
+        timestamp: Date.now(),
+        expiresAt: Date.now() + CACHE_DURATION
+      });
 
       // 모든 음식의 평균 별점 가져오기
       const allFoods = Object.values(data).flat();
@@ -289,6 +317,8 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const averages = await getAverageRatings(allFoods, SCHOOL_CODE);
         setAverageRatings(prev => ({ ...prev, ...averages }));
       }
+
+      setMealData(prev => ({ ...prev, ...data }));
     } catch (error) {
       console.error('Error prefetching data:', error);
     }

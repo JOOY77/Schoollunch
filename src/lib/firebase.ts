@@ -63,6 +63,8 @@ export const getGoogleRedirectResult = async () => {
   }
 };
 
+// 이메일 관련 기능 (현재 미사용)
+/*
 // 이메일 회원가입
 export const signupWithEmail = (email: string, password: string) => {
   return createUserWithEmailAndPassword(auth, email, password);
@@ -71,4 +73,5 @@ export const signupWithEmail = (email: string, password: string) => {
 // 이메일 로그인
 export const loginWithEmail = (email: string, password: string) => {
   return signInWithEmailAndPassword(auth, email, password);
-}; 
+};
+*/ 
