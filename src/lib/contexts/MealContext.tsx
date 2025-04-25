@@ -6,6 +6,8 @@ import { getMealData, type MealData } from '../mealApi';
 import { saveRating as saveRatingToDb, getAverageRatings, getUserRatings } from '../ratingService';
 import { auth } from '@/lib/firebase';
 import { User, signOut } from 'firebase/auth';
+import { collection, query, where, getDocs, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 interface CacheData {
   data: MealData;
@@ -17,6 +19,7 @@ interface MealContextType {
   mealData: MealData;
   averageRatings: Record<string, number>;
   userRatings: Record<string, number>;
+  favorites: string[];
   isAuthenticated: boolean;
   user: User | null;
   getMealDataForDate: (date: Date) => string[];
@@ -25,6 +28,7 @@ interface MealContextType {
   getRatedFoodsCount: (meals: string[]) => number;
   getMyRatedFoodsCount: (meals: string[]) => number;
   saveRating: (food: string, rating: number, date: Date) => Promise<void>;
+  toggleFavorite: (food: string) => Promise<void>;
   prefetchMealData: (date: Date, direction?: 'prev' | 'next') => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -62,6 +66,7 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [mealData, setMealData] = useState<MealData>({});
   const [averageRatings, setAverageRatings] = useState<Record<string, number>>({});
   const [userRatings, setUserRatings] = useState<Record<string, number>>({});
+  const [favorites, setFavorites] = useState<string[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [cache] = useState<Map<string, CacheData>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -130,8 +135,10 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(user);
       if (user) {
         loadUserRatings(user.uid);
+        loadUserFavorites(user.uid);
       } else {
         setUserRatings({});
+        setFavorites([]);
       }
     });
     return () => unsubscribe();
@@ -146,6 +153,53 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Error loading user ratings:', error);
     }
   }, []);
+
+  // 사용자 즐겨찾기 로드
+  const loadUserFavorites = useCallback(async (userId: string) => {
+    try {
+      const favoritesRef = collection(db, 'favorites');
+      const q = query(favoritesRef, where('userId', '==', userId));
+      const querySnapshot = await getDocs(q);
+      const userFavorites: string[] = [];
+      querySnapshot.forEach((doc) => {
+        userFavorites.push(doc.data().food);
+      });
+      setFavorites(userFavorites);
+    } catch (error) {
+      console.error('Error loading user favorites:', error);
+    }
+  }, []);
+
+  // 즐겨찾기 토글
+  const toggleFavorite = useCallback(async (food: string) => {
+    if (!user) return;
+
+    try {
+      const favoritesRef = collection(db, 'favorites');
+      const q = query(favoritesRef, 
+        where('userId', '==', user.uid),
+        where('food', '==', food)
+      );
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        // 즐겨찾기 추가
+        await addDoc(favoritesRef, {
+          userId: user.uid,
+          food,
+          createdAt: serverTimestamp()
+        });
+        setFavorites(prev => [...prev, food]);
+      } else {
+        // 즐겨찾기 제거
+        const docToDelete = querySnapshot.docs[0];
+        await deleteDoc(docToDelete.ref);
+        setFavorites(prev => prev.filter(f => f !== food));
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+    }
+  }, [user]);
 
   // 특정 날짜의 급식 데이터 반환
   const getMealDataForDate = useCallback((date: Date): string[] => {
@@ -366,6 +420,7 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
       mealData,
       averageRatings,
       userRatings,
+      favorites,
       isAuthenticated: !!user,
       user,
       getMealDataForDate,
@@ -374,6 +429,7 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
       getRatedFoodsCount,
       getMyRatedFoodsCount,
       saveRating,
+      toggleFavorite,
       prefetchMealData,
       loading,
       error,

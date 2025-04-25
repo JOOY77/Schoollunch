@@ -3,7 +3,7 @@
 import React, { useRef, useState, type TouchEvent, type MouseEvent } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { format } from "date-fns"
-import { ChevronLeft, ChevronRight, Mouse, Search, Star, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Mouse, Search, Star, X, Heart } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { StarRating } from "./star-rating"
 import { AuthDialog } from './auth/AuthDialog'
@@ -14,14 +14,18 @@ const Popup = React.memo(function Popup({
     food,
     onClose,
     onRate,
+    onToggleFavorite,
     currentRating,
     isAuthenticated,
+    isFavorite,
 }: {
     food: string
     onClose: () => void
     onRate: (rating: number) => void
+    onToggleFavorite: () => void
     currentRating: number
     isAuthenticated: boolean
+    isFavorite: boolean
 }) {
     const [showRating, setShowRating] = useState(false)
     const [localRating, setLocalRating] = useState(currentRating)
@@ -46,6 +50,16 @@ const Popup = React.memo(function Popup({
         e.stopPropagation()
         if (isAuthenticated) {
             setShowRating(true)
+        } else {
+            setShowAuth(true)
+        }
+    }
+
+    const handleFavorite = async (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (isAuthenticated) {
+            await onToggleFavorite()
+            onClose()
         } else {
             setShowAuth(true)
         }
@@ -100,6 +114,35 @@ const Popup = React.memo(function Popup({
                                 {isAuthenticated ? "별점 주기" : "로그인하여 별점 주기"}
                             </span>
                         </button>
+                        <button
+                            onClick={handleFavorite}
+                            className={`flex items-center w-full text-left px-4 py-3 text-base rounded-lg transition-colors ${
+                                isAuthenticated 
+                                    ? isFavorite
+                                        ? "bg-red-100 hover:bg-red-200"
+                                        : "bg-red-50 hover:bg-red-100"
+                                    : "bg-red-50 hover:bg-red-100"
+                            }`}
+                        >
+                            <div className={`p-2 rounded-full mr-3 ${
+                                isAuthenticated ? "bg-red-500" : "bg-red-500"
+                            }`}>
+                                <Heart size={18} className={`${isFavorite ? "fill-white" : ""} text-white`} />
+                            </div>
+                            <span className={`font-medium ${
+                                isAuthenticated 
+                                    ? isFavorite
+                                        ? "text-red-800"
+                                        : "text-red-700"
+                                    : "text-red-700"
+                            }`}>
+                                {isAuthenticated 
+                                    ? isFavorite 
+                                        ? "즐겨찾기 해제" 
+                                        : "즐겨찾기" 
+                                    : "로그인하여 즐겨찾기"}
+                            </span>
+                        </button>
                     </div>
                 ) : (
                     <div className="space-y-4">
@@ -138,7 +181,9 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
         calculateAverageRating,
         calculateMyAverageRating,
         getRatedFoodsCount,
-        getMyRatedFoodsCount
+        getMyRatedFoodsCount,
+        favorites,
+        toggleFavorite
     } = useMealContext()
 
     const [selectedFood, setSelectedFood] = useState<string | null>(null)
@@ -186,11 +231,19 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                         {mealData.map((item, index) => (
                             <div key={index} className="flex items-center">
                                 <div
-                                    className="flex items-center flex-1 cursor-pointer hover:bg-gray-50 p-1 lg:p-1.5 rounded"
+                                    className={`flex items-center flex-1 cursor-pointer p-1 lg:p-1.5 rounded transition-colors ${
+                                        favorites.includes(item)
+                                            ? "bg-red-50 hover:bg-red-100 border border-red-200"
+                                            : "hover:bg-gray-50"
+                                    }`}
                                     onClick={(e) => handleFoodClick(e, item)}
                                 >
-                                    <div className="w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full bg-blue-500 mr-2"></div>
-                                    <p className="text-sm lg:text-base text-gray-700">{item}</p>
+                                    <div className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full mr-2 ${
+                                        favorites.includes(item) ? "bg-red-500" : "bg-blue-500"
+                                    }`}></div>
+                                    <p className={`text-sm lg:text-base ${
+                                        favorites.includes(item) ? "text-red-900 font-medium" : "text-gray-700"
+                                    }`}>{item}</p>
                                     {userRatings[item] > 0 && (
                                         <div className="flex items-center text-xs lg:text-sm text-gray-500 ml-1.5">
                                             <span>{userRatings[item]}</span>
@@ -203,12 +256,15 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                                             <Star size={12} className="ml-0.5 fill-gray-400 text-gray-400 w-3 h-3 lg:w-3.5 lg:h-3.5" />
                                         </div>
                                     )}
+                                    {favorites.includes(item) && (
+                                        <Heart size={14} className="ml-1.5 text-red-500 fill-red-500 w-3.5 h-3.5 lg:w-4 lg:h-4" />
+                                    )}
                                 </div>
                             </div>
                         ))}
                     </div>
                 ) : (
-                    <p className="text-center py-4 text-sm lg:text-base text-gray-500">이날은 급식이 없습니다.</p>
+                    <p className="text-sm lg:text-base text-gray-500 text-center py-2">급식 정보가 없습니다</p>
                 )}
 
                 {mealData.length > 0 && (
@@ -248,8 +304,10 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                         food={selectedFood}
                         onClose={closePopup}
                         onRate={(rating) => saveRatingToFirebase(selectedFood, rating)}
+                        onToggleFavorite={() => toggleFavorite(selectedFood)}
                         currentRating={userRatings[selectedFood] || 0}
                         isAuthenticated={isAuthenticated}
+                        isFavorite={favorites.includes(selectedFood)}
                     />
                 )}
             </CardContent>
