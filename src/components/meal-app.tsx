@@ -3,6 +3,7 @@
 import React, { useRef, useState, type TouchEvent, type MouseEvent } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { format } from "date-fns"
+import { ko } from "date-fns/locale"
 import { ChevronLeft, ChevronRight, Mouse, Search, Star, X, Heart } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { StarRating } from "./star-rating"
@@ -614,7 +615,7 @@ export default function MealApp() {
                         <ChevronLeft className="w-5 h-5" />
                     </button>
                     <h2 className="text-base lg:text-lg font-medium">
-                        {dates[currentIndex] ? format(dates[currentIndex], "yyyy년 MM월 dd일") : ""}
+                        {dates[currentIndex] ? format(dates[currentIndex], "yyyy년 MM월 dd일 (EEEE)", { locale: ko }) : ""}
                     </h2>
                     <button onClick={() => changeDate("next")} className="p-1.5 -mr-1.5" disabled={currentIndex >= dates.length - 1}>
                         <ChevronRight className="w-5 h-5" />
