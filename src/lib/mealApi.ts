@@ -7,11 +7,11 @@ const BASE_URL = 'https://open.neis.go.kr/hub';
 const ATPT_OFCDC_SC_CODE = 'H10';  // 서울특별시교육청
 const SD_SCHUL_CODE = '7480075';    // 학교 코드
 
-export interface MealData {
+export type RawMealData = {
   [date: string]: string[];
-}
+};
 
-export async function getMealData(startDate: Date, endDate: Date): Promise<MealData> {
+export async function getMealData(startDate: Date, endDate: Date): Promise<RawMealData> {
   const formattedStartDate = format(startDate, 'yyyyMMdd');
   const formattedEndDate = format(endDate, 'yyyyMMdd');
 
@@ -30,7 +30,7 @@ export async function getMealData(startDate: Date, endDate: Date): Promise<MealD
     }
     const data = await response.json();
     
-    const result: MealData = {};
+    const result: RawMealData = {};
 
     // API 응답 구조 확인
     if (!data.mealServiceDietInfo) {

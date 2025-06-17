@@ -184,7 +184,8 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
         getRatedFoodsCount,
         getMyRatedFoodsCount,
         favorites,
-        toggleFavorite
+        toggleFavorite,
+        ratingsCount
     } = useMealContext()
 
     const [selectedFood, setSelectedFood] = useState<string | null>(null)
@@ -244,19 +245,21 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                                     }`}></div>
                                     <p className={`text-sm lg:text-base ${
                                         favorites.includes(item) ? "text-red-900 font-medium" : "text-gray-700"
-                                    }`}>{item}</p>
-                                    {userRatings[item] > 0 && (
-                                        <div className="flex items-center text-xs lg:text-sm text-gray-500 ml-1.5">
-                                            <span>{userRatings[item]}</span>
-                                            <Star size={14} className="ml-0.5 fill-yellow-400 text-yellow-400 w-3.5 h-3.5 lg:w-4 lg:h-4" />
-                                        </div>
-                                    )}
-                                    {averageRatings[item] > 0 && (
-                                        <div className="flex items-center text-xs lg:text-sm text-gray-500 ml-1.5">
-                                            <span className="text-[11px] lg:text-xs">(평균 {averageRatings[item].toFixed(1)})</span>
-                                            <Star size={12} className="ml-0.5 fill-gray-400 text-gray-400 w-3 h-3 lg:w-3.5 lg:h-3.5" />
-                                        </div>
-                                    )}
+                                    }`}>{item}
+                                        {userRatings[item] > 0 && (
+                                            <span className="flex items-center inline-flex ml-1">
+                                                <Star size={14} className="ml-0.5 fill-yellow-400 text-yellow-400 w-3.5 h-3.5 lg:w-4 lg:h-4" />
+                                                <span className="ml-0.5">{userRatings[item]}</span>
+                                            </span>
+                                        )}
+                                        {averageRatings[item] > 0 && (
+                                            <span className="flex items-center inline-flex ml-1 text-gray-500 text-xs lg:text-sm">
+                                                (평균
+                                                <Star size={12} className="mx-0.5 fill-gray-400 text-gray-400 w-3 h-3 lg:w-3.5 lg:h-3.5" />
+                                                {averageRatings[item].toFixed(1)})
+                                            </span>
+                                        )}
+                                    </p>
                                     {favorites.includes(item) && (
                                         <Heart size={14} className="ml-1.5 text-red-500 fill-red-500 w-3.5 h-3.5 lg:w-4 lg:h-4" />
                                     )}
@@ -293,7 +296,7 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                                     <Star size={16} className="ml-1 fill-yellow-400 text-yellow-400 w-4 h-4 sm:w-5 sm:h-5" />
                                 </div>
                                 <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                                    {getRatedFoodsCount(mealData)}개 평가
+                                    {mealData.reduce((sum, food) => sum + (ratingsCount[food] || 0), 0)}개 평가
                                 </p>
                             </div>
                         </div>
@@ -462,7 +465,8 @@ export default function MealApp() {
         user,
         showLogoutConfirm,
         setShowLogoutConfirm,
-        handleLogout
+        handleLogout,
+        ratingsCount
     } = useMealContext();
 
     const containerRef = useRef<HTMLDivElement>(null);

@@ -115,22 +115,21 @@ export async function getUserRatings(userId: string) {
 
 export async function getAverageRatings(foods: string[], schoolCode: string) {
   try {
-    const averages: Record<string, number> = {};
-    
+    const averages: Record<string, { averageRating: number, totalRatings: number }> = {};
     await Promise.all(foods.map(async (food) => {
       const encodedFood = encodeForDocId(food);
       const averageRef = doc(db, 'averageRatings', `${encodedFood}_${schoolCode}`);
       const averageDoc = await getDoc(averageRef);
-      
       if (averageDoc.exists()) {
         const data = averageDoc.data();
-        // 유효한 평점이 있는 경우에만 평균값 사용
-        averages[food] = data.totalRatings > 0 ? data.averageRating : 0;
+        averages[food] = {
+          averageRating: data.totalRatings > 0 ? data.averageRating : 0,
+          totalRatings: data.totalRatings || 0
+        };
       } else {
-        averages[food] = 0;
+        averages[food] = { averageRating: 0, totalRatings: 0 };
       }
     }));
-    
     return averages;
   } catch (error) {
     console.error('Error getting average ratings:', error);

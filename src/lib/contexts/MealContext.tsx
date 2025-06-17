@@ -2,12 +2,17 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { format, addDays, subDays } from 'date-fns';
-import { getMealData, type MealData } from '../mealApi';
+import { getMealData, type RawMealData } from '../mealApi';
 import { saveRating as saveRatingToDb, getAverageRatings, getUserRatings } from '../ratingService';
 import { auth } from '@/lib/firebase';
 import { User, signOut } from 'firebase/auth';
 import { collection, query, where, getDocs, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+
+// MealData 타입: 날짜별로 { menu, timestamp } 객체
+interface MealData {
+  [date: string]: { menu: string[]; timestamp: number };
+}
 
 interface CacheData {
   data: MealData;
@@ -29,7 +34,7 @@ interface MealContextType {
   getMyRatedFoodsCount: (meals: string[]) => number;
   saveRating: (food: string, rating: number, date: Date) => Promise<void>;
   toggleFavorite: (food: string) => Promise<void>;
-  prefetchMealData: (date: Date, direction?: 'prev' | 'next') => Promise<void>;
+  prefetchMealData: (date: Date) => Promise<void>;
   loading: boolean;
   error: string | null;
   dates: Date[];
@@ -50,6 +55,7 @@ interface MealContextType {
   setDragOffset: (offset: number) => void;
   dragStartX: number;
   setDragStartX: (x: number) => void;
+  ratingsCount: Record<string, number>;
 }
 
 const MealContext = createContext<MealContextType | null>(null);
@@ -78,6 +84,7 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState(0);
   const [dragStartX, setDragStartX] = useState(0);
+  const [ratingsCount, setRatingsCount] = useState<Record<string, number>>({});
   
   const SCHOOL_CODE = 'H10';
   const CACHE_DURATION = 1000 * 60 * 60 * 24; // 24시간으로 확장
@@ -113,9 +120,31 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const currentDate = dates[currentIndex];
       setLoading(true);
       
-      // 현재 날짜 기준으로 데이터 가져오기
       getImmediateData(currentDate)
-        .then(() => {
+        .then((filled) => {
+          // 급식 데이터 받아온 후, 해당 날짜 음식들의 평균 별점/평가 갯수도 불러오기
+          // filled가 undefined면 mealData에서 가져옴
+          let foods: string[] = [];
+          if (filled) {
+            foods = Object.values(filled).flatMap(day => day.menu);
+          } else {
+            const dateKey = format(currentDate, 'yyyy-MM-dd');
+            foods = mealData[dateKey]?.menu || [];
+          }
+          // 중복 음식 제거
+          const uniqueFoods = Array.from(new Set(foods));
+          if (uniqueFoods.length > 0) {
+            getAverageRatings(uniqueFoods, SCHOOL_CODE).then(averages => {
+              const newRatingsCount: Record<string, number> = {};
+              const newAverages: Record<string, number> = {};
+              Object.entries(averages).forEach(([food, data]) => {
+                newAverages[food] = data.averageRating;
+                newRatingsCount[food] = data.totalRatings;
+              });
+              setAverageRatings(prev => ({ ...prev, ...newAverages }));
+              setRatingsCount(prev => ({ ...prev, ...newRatingsCount }));
+            });
+          }
           setLoading(false);
         })
         .catch((error) => {
@@ -204,7 +233,7 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // 특정 날짜의 급식 데이터 반환
   const getMealDataForDate = useCallback((date: Date): string[] => {
     const dateKey = format(date, 'yyyy-MM-dd');
-    return mealData[dateKey] || [];
+    return mealData[dateKey]?.menu || [];
   }, [mealData]);
 
   // 평균 별점 계산
@@ -236,98 +265,89 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   // 캐시 관리를 위한 유틸리티 함수들
-  const getCacheKey = (date: Date) => format(date, 'yyyy-MM');
+  const getCacheKey = (startDate: Date, endDate: Date) => {
+    return `${format(startDate, 'yyyy-MM-dd')}_${format(endDate, 'yyyy-MM-dd')}`;
+  };
+
+  const isDateInRange = (date: Date, startDate: Date, endDate: Date) => {
+    const timestamp = date.getTime();
+    return timestamp >= startDate.getTime() && timestamp <= endDate.getTime();
+  };
+
+  const findCacheForDate = (date: Date) => {
+    // 모든 캐시 키를 확인하여 해당 날짜를 포함하는 범위 찾기
+    for (const [key, cachedData] of cache.entries()) {
+      if (!isValidCache(cachedData)) continue;
+      
+      const [startStr, endStr] = key.split('_');
+      const startDate = new Date(startStr);
+      const endDate = new Date(endStr);
+      
+      if (isDateInRange(date, startDate, endDate)) {
+        return { key, data: cachedData };
+      }
+    }
+    
+    return null;
+  };
 
   const isValidCache = (cached: CacheData) => {
     return cached && Date.now() < cached.expiresAt;
   };
 
+  // 월의 시작일과 마지막일을 구하는 함수
+  function getMonthRange(date: Date) {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+    return { start, end };
+  }
+
   // 즉시 로딩 데이터 가져오기 (개선된 버전)
-  const getImmediateData = useCallback(async (date: Date, direction?: 'prev' | 'next') => {
-    const monthKey = getCacheKey(date);
-    
-    // 1. 캐시 확인
-    if (cache.has(monthKey)) {
-      const cached = cache.get(monthKey)!;
-      if (isValidCache(cached)) {
-        setMealData(prev => ({ ...prev, ...cached.data }));
-        return cached.data;
-      }
+  const getImmediateData = useCallback(async (date: Date) => {
+    const { start, end } = getMonthRange(date);
+    const now = Date.now();
+    const DAY_MS = 1000 * 60 * 60 * 24;
+    const daysInMonth: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      daysInMonth.push(format(new Date(d), 'yyyy-MM-dd'));
     }
-
-    // 2. 캐시 없거나 만료된 경우만 새로 로드
-    let start = subDays(date, IMMEDIATE_RANGE);
-    let end = addDays(date, IMMEDIATE_RANGE);
-
-    if (direction === 'prev') {
-      start = subDays(start, PRELOAD_RANGE);
-    } else if (direction === 'next') {
-      end = addDays(end, PRELOAD_RANGE);
-    }
-
-    try {
-      const data = await getMealData(start, end);
-      
-      // 3. 새로운 데이터 캐시에 저장
-      cache.set(monthKey, {
-        data,
-        timestamp: Date.now(),
-        expiresAt: Date.now() + CACHE_DURATION
-      });
-      
-      setMealData(prev => ({ ...prev, ...data }));
-      return data;
-    } catch (error) {
-      console.error('Error fetching immediate data:', error);
-      return null;
-    }
-  }, [cache]);
+    // 24시간 이내 데이터만 재사용
+    const allExist = daysInMonth.every(day => mealData[day] && (now - mealData[day].timestamp < DAY_MS));
+    if (allExist) return;
+    const data: RawMealData = await getMealData(start, end);
+    const filled: MealData = {};
+    daysInMonth.forEach(day => {
+      filled[day] = { menu: data[day] || [], timestamp: now };
+    });
+    setMealData(prev => ({ ...prev, ...filled }));
+    return filled;
+  }, [mealData]);
 
   // 백그라운드 데이터 프리페칭 (개선된 버전)
-  const prefetchBackgroundData = useCallback(async (date: Date, direction?: 'prev' | 'next') => {
-    const monthKey = getCacheKey(date);
-    
-    // 이미 유효한 캐시가 있으면 스킵
-    if (cache.has(monthKey) && isValidCache(cache.get(monthKey)!)) {
-      return;
+  const prefetchBackgroundData = useCallback(async (date: Date) => {
+    const { start, end } = getMonthRange(date);
+    const now = Date.now();
+    const DAY_MS = 1000 * 60 * 60 * 24;
+    const daysInMonth: string[] = [];
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      daysInMonth.push(format(new Date(d), 'yyyy-MM-dd'));
     }
-
-    let start = subDays(date, BACKGROUND_RANGE);
-    let end = addDays(date, BACKGROUND_RANGE);
-
-    if (direction === 'prev') {
-      start = subDays(start, PRELOAD_RANGE);
-    } else if (direction === 'next') {
-      end = addDays(end, PRELOAD_RANGE);
-    }
-
-    try {
-      const data = await getMealData(start, end);
-      
-      // 캐시 저장
-      cache.set(monthKey, {
-        data,
-        timestamp: Date.now(),
-        expiresAt: Date.now() + CACHE_DURATION
-      });
-
-      // 모든 음식의 평균 별점 가져오기
-      const allFoods = Object.values(data).flat();
-      if (allFoods.length > 0) {
-        const averages = await getAverageRatings(allFoods, SCHOOL_CODE);
-        setAverageRatings(prev => ({ ...prev, ...averages }));
-      }
-
-      setMealData(prev => ({ ...prev, ...data }));
-    } catch (error) {
-      console.error('Error prefetching data:', error);
-    }
-  }, [cache]);
+    const allExist = daysInMonth.every(day => mealData[day] && (now - mealData[day].timestamp < DAY_MS));
+    if (allExist) return;
+    const data: RawMealData = await getMealData(start, end);
+    const filled: MealData = {};
+    daysInMonth.forEach(day => {
+      filled[day] = { menu: data[day] || [], timestamp: now };
+    });
+    setMealData(prev => ({ ...prev, ...filled }));
+  }, [mealData]);
 
   // 통합된 데이터 프리페칭
-  const prefetchMealData = useCallback(async (date: Date, direction?: 'prev' | 'next') => {
-    await getImmediateData(date, direction); // 즉시 로딩
-    prefetchBackgroundData(date, direction); // 백그라운드 로딩
+  const prefetchMealData = useCallback(async (date: Date) => {
+    await getImmediateData(date); // 즉시 로딩
+    prefetchBackgroundData(date); // 백그라운드 로딩
   }, [getImmediateData, prefetchBackgroundData]);
 
   // 별점 저장
@@ -342,21 +362,21 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
         schoolCode: SCHOOL_CODE,
         date: format(date, 'yyyy-MM-dd')
       });
-      
       // 사용자 별점 업데이트
       setUserRatings(prev => ({
         ...prev,
         [food]: rating
       }));
-
-      // 평균 별점 새로고침
+      // 평균 별점 및 평가 수 새로고침
       const allFoods = [food];
       const averages = await getAverageRatings(allFoods, SCHOOL_CODE);
-      setAverageRatings(prev => ({
-        ...prev,
-        ...averages
-      }));
-
+      const newRatingsCount: Record<string, number> = {};
+      Object.entries(averages).forEach(([food, data]) => {
+        averageRatings[food] = data.averageRating;
+        newRatingsCount[food] = data.totalRatings;
+      });
+      setAverageRatings(prev => ({ ...prev, ...averageRatings }));
+      setRatingsCount(prev => ({ ...prev, ...newRatingsCount }));
       // 주변 날짜들의 데이터도 새로고침
       const prevDate = subDays(date, 1);
       const nextDate = addDays(date, 1);
@@ -365,7 +385,6 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getImmediateData(date),
         getImmediateData(nextDate)
       ]);
-
     } catch (error) {
       console.error('Error saving rating:', error);
       setError('별점을 저장하는 중 오류가 발생했습니다.');
@@ -414,7 +433,13 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       await signOut(auth);
       setShowLogoutConfirm(false);
-      window.location.reload();
+      // 상태만 초기화
+      setUser(null);
+      setUserRatings({});
+      setFavorites([]);
+      setAverageRatings({});
+      setRatingsCount({});
+      // setMealData({}); // 급식 데이터는 남겨도 됨
     } catch (error) {
       setError('로그아웃 중 오류가 발생했습니다.');
     }
@@ -481,6 +506,7 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setDragOffset,
       dragStartX,
       setDragStartX,
+      ratingsCount,
     }}>
       {children}
     </MealContext.Provider>
