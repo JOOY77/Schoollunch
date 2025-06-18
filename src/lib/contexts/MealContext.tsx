@@ -11,7 +11,7 @@ import { db } from '@/lib/firebase';
 
 // MealData 타입: 날짜별로 { menu, timestamp } 객체
 interface MealData {
-  [date: string]: { menu: string[]; timestamp: number };
+  [date: string]: { menu: string[]; calorie?: string; timestamp: number };
 }
 
 interface CacheData {
@@ -27,7 +27,7 @@ interface MealContextType {
   favorites: string[];
   isAuthenticated: boolean;
   user: User | null;
-  getMealDataForDate: (date: Date) => string[];
+  getMealDataForDate: (date: Date) => { menu: string[]; calorie?: string };
   calculateAverageRating: (meals: string[]) => string;
   calculateMyAverageRating: (meals: string[]) => string;
   getRatedFoodsCount: (meals: string[]) => number;
@@ -231,9 +231,12 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   // 특정 날짜의 급식 데이터 반환
-  const getMealDataForDate = useCallback((date: Date): string[] => {
+  const getMealDataForDate = useCallback((date: Date): { menu: string[]; calorie?: string } => {
     const dateKey = format(date, 'yyyy-MM-dd');
-    return mealData[dateKey]?.menu || [];
+    return {
+      menu: mealData[dateKey]?.menu || [],
+      calorie: mealData[dateKey]?.calorie,
+    };
   }, [mealData]);
 
   // 평균 별점 계산
@@ -313,13 +316,16 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       daysInMonth.push(format(new Date(d), 'yyyy-MM-dd'));
     }
-    // 24시간 이내 데이터만 재사용
     const allExist = daysInMonth.every(day => mealData[day] && (now - mealData[day].timestamp < DAY_MS));
     if (allExist) return;
     const data: RawMealData = await getMealData(start, end);
     const filled: MealData = {};
     daysInMonth.forEach(day => {
-      filled[day] = { menu: data[day] || [], timestamp: now };
+      filled[day] = {
+        menu: data[day]?.menu || [],
+        calorie: data[day]?.calorie,
+        timestamp: now
+      };
     });
     setMealData(prev => ({ ...prev, ...filled }));
     return filled;
@@ -339,7 +345,11 @@ export const MealProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const data: RawMealData = await getMealData(start, end);
     const filled: MealData = {};
     daysInMonth.forEach(day => {
-      filled[day] = { menu: data[day] || [], timestamp: now };
+      filled[day] = {
+        menu: data[day]?.menu || [],
+        calorie: data[day]?.calorie,
+        timestamp: now
+      };
     });
     setMealData(prev => ({ ...prev, ...filled }));
   }, [mealData]);

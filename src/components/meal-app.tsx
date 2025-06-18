@@ -190,7 +190,9 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
 
     const [selectedFood, setSelectedFood] = useState<string | null>(null)
     const cardRef = useRef<HTMLDivElement>(null)
-    const mealData = getMealDataForDate(date)
+    const mealDataObj = getMealDataForDate(date)
+    const menu: string[] = mealDataObj.menu
+    const calorie: string | undefined = mealDataObj.calorie
 
     const handleFoodClick = (e: React.MouseEvent, food: string) => {
         e.stopPropagation()
@@ -228,9 +230,9 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                     </div>
                 )}
 
-                {mealData.length > 0 ? (
+                {menu.length > 0 ? (
                     <div className="space-y-2">
-                        {mealData.map((item, index) => (
+                        {menu.map((item: string, index: number) => (
                             <div key={index} className="flex items-center">
                                 <div
                                     className={`flex items-center flex-1 cursor-pointer p-1 lg:p-1.5 rounded transition-colors ${
@@ -266,12 +268,17 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                                 </div>
                             </div>
                         ))}
+                        {calorie && (
+                            <div className="text-center font-bold text-base text-blue-700 mt-3">
+                                오늘의 급식 총 칼로리: {calorie}
+                            </div>
+                        )}
                     </div>
                 ) : (
                     <p className="text-sm lg:text-base text-gray-500 text-center py-2">급식 정보가 없습니다</p>
                 )}
 
-                {mealData.length > 0 && (
+                {menu.length > 0 && (
                     <div className="mt-4 sm:mt-6 pt-2.5 sm:pt-3 border-t border-gray-200">
                         <h4 className="text-xs sm:text-sm font-medium text-gray-700 mb-2 sm:mb-2.5">오늘의 급식 평가</h4>
                         <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -279,24 +286,24 @@ const MealCard = React.memo(function MealCard({ date, className }: { date: Date;
                                 <p className="text-xs sm:text-sm text-gray-500 mb-1 sm:mb-1.5">나의 평균 별점</p>
                                 <div className="flex items-center">
                                     <span className="text-base sm:text-lg font-bold text-gray-800">
-                                        {calculateMyAverageRating(mealData)}
+                                        {calculateMyAverageRating(menu)}
                                     </span>
                                     <Star size={16} className="ml-1 fill-yellow-400 text-yellow-400 w-4 h-4 sm:w-5 sm:h-5" />
                                 </div>
                                 <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                                    {getMyRatedFoodsCount(mealData)}개 평가
+                                    {getMyRatedFoodsCount(menu)}개 평가
                                 </p>
                             </div>
                             <div className="bg-gray-50 p-2 sm:p-2.5 rounded-lg">
                                 <p className="text-xs sm:text-sm text-gray-500 mb-1 sm:mb-1.5">전체 평균 별점</p>
                                 <div className="flex items-center">
                                     <span className="text-base sm:text-lg font-bold text-gray-800">
-                                        {calculateAverageRating(mealData)}
+                                        {calculateAverageRating(menu)}
                                     </span>
                                     <Star size={16} className="ml-1 fill-yellow-400 text-yellow-400 w-4 h-4 sm:w-5 sm:h-5" />
                                 </div>
                                 <p className="text-xs sm:text-sm text-gray-500 mt-1">
-                                    {mealData.reduce((sum, food) => sum + (ratingsCount[food] || 0), 0)}개 평가
+                                    {menu.reduce((sum: number, food: string) => sum + (ratingsCount[food] || 0), 0)}개 평가
                                 </p>
                             </div>
                         </div>

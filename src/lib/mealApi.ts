@@ -8,7 +8,10 @@ const ATPT_OFCDC_SC_CODE = 'H10';  // 서울특별시교육청
 const SD_SCHUL_CODE = '7480075';    // 학교 코드
 
 export type RawMealData = {
-  [date: string]: string[];
+  [date: string]: {
+    menu: string[];
+    calorie?: string;
+  };
 };
 
 export async function getMealData(startDate: Date, endDate: Date): Promise<RawMealData> {
@@ -47,16 +50,15 @@ export async function getMealData(startDate: Date, endDate: Date): Promise<RawMe
       data.mealServiceDietInfo[1].row.forEach((meal: any) => {
         const date = meal.MLSV_YMD; // YYYYMMDD 형식
         const formattedDate = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`;
-        // 급식 메뉴를 배열로 변환 (불필요한 정보 제거)
         const menuList = meal.DDISH_NM.split('<br/>')
           .map((item: string) => item.trim())
-          .map((item: string) => {
-            // 알레르기 정보 제거 (예: 쌀밥(1.2.3) -> 쌀밥)
-            return item.replace(/\([0-9.,]+\)/g, '').trim();
-          })
+          .map((item: string) => item.replace(/\([0-9.,]+\)/g, '').trim())
           .filter((item: string) => item !== '');
-
-        result[formattedDate] = menuList;
+        const calorie = meal.CAL_INFO ? meal.CAL_INFO.trim() : undefined;
+        result[formattedDate] = {
+          menu: menuList,
+          calorie,
+        };
       });
     }
 
