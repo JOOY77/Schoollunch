@@ -656,15 +656,9 @@ export default function MealApp() {
                 {renderCards()}
             </div>
 
-            {/* 사용 안내 */}
-            <div className="w-full text-center mt-4 lg:mt-5 space-y-1">
-                <div className="text-xs lg:text-sm text-gray-600 flex items-center justify-center gap-1">
-                    <span>← 좌우로 스와이프하여 날짜 변경 →</span>
-                </div>
-                <div className="text-[10px] lg:text-xs text-gray-500 flex items-center justify-center gap-1">
-                    <Mouse className="w-3 h-3 lg:w-3.5 lg:h-3.5" />
-                    <span>컴퓨터: 마우스로 좌우 드래그</span>
-                </div>
+            {/* 사용 안내 → 음식 이름을 눌러 별점을 남겨보세요! */}
+            <div className="text-xs lg:text-sm text-gray-500 flex items-center justify-center mt-2">
+                음식 이름을 눌러 별점을 남겨보세요!
             </div>
 
             {/* 로그아웃 확인 대화상자 */}
